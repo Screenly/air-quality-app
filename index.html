@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Air quality near this screen - Screenly Edge App</title>
+    <script src="screenly.js?version=1"></script>
+  </head>
+  <body>
+    <div id="stage">
+      <!-- src/world.svg is injected ahead of the marker at start-up. -->
+      <div id="map">
+        <div class="marker you" id="you">
+          <div class="aura"></div>
+          <div class="halo"></div>
+          <div class="dot"></div>
+          <div class="tag">You</div>
+        </div>
+      </div>
+
+      <div class="layer brand">
+        <span class="live"></span><b>Air quality</b> ·
+        <span id="asof">now</span>
+      </div>
+
+      <div class="layer panel">
+        <div>
+          <div class="label" id="scale">US AQI</div>
+          <div class="aqi" id="aqi">—</div>
+        </div>
+        <div>
+          <div class="category" id="category"></div>
+          <div class="advice" id="advice"></div>
+        </div>
+        <div class="pollutants" id="pollutants"></div>
+        <div class="forecast" id="forecast">
+          <div class="label">
+            Next 24 hours<span class="peak" id="peak"></span>
+          </div>
+          <div class="bars" id="bars"></div>
+          <div class="hours" id="hours"></div>
+        </div>
+      </div>
+
+      <div class="layer here">
+        <div class="label" id="lede">You are here</div>
+        <div class="place" id="where"></div>
+        <div class="coord" id="coord"></div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

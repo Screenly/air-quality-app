@@ -1,0 +1,81 @@
+---
+syntax: manifest_v1
+description: 'The air quality index where this screen is, with the main pollutant and the next 24 hours.'
+icon: https://playground.srly.io/edge-apps/icons/air-quality.svg
+author: Screenly, Inc.
+categories:
+  - Dashboards
+ready_signal: true
+settings:
+  aqi_scale:
+    type: string
+    default_value: us
+    title: Index
+    optional: true
+    help_text:
+      schema_version: 1
+      properties:
+        type: select
+        display_order: 1
+        help_text: |
+          US AQI runs 0 to 500, from Good to Hazardous. The European AQI runs 0 to 100 and over, from Good to Extremely poor.
+        options:
+          - label: US AQI
+            value: us
+          - label: European AQI
+            value: european
+  override_locale:
+    type: string
+    default_value: en
+    title: Override Locale
+    optional: true
+    help_text:
+      schema_version: 1
+      properties:
+        type: string
+        advanced: true
+        display_order: 2
+        help_text: |
+          Change how numbers and hours are written using a language code such as en, fr, de or pt-BR. Labels stay in English. Unsupported codes fall back to English.
+  override_coordinates:
+    type: string
+    default_value: ''
+    title: Override Coordinates
+    optional: true
+    help_text:
+      schema_version: 1
+      properties:
+        type: string
+        advanced: true
+        display_order: 3
+        help_text: |
+          Enter a comma-separated pair of coordinates (e.g., 37.8267,-122.4233). If not specified, the app will attempt to use the device's coordinates.
+  open_meteo_api_key:
+    type: secret
+    title: Open-Meteo API Key
+    optional: true
+    help_text:
+      schema_version: 1
+      properties:
+        advanced: true
+        display_order: 4
+        help_text: |
+          Optional. Open-Meteo's free API is for non-commercial use. With a key from a paid Open-Meteo plan, the app uses the customer API instead. Leave blank to use the free API.
+  display_errors:
+    type: string
+    default_value: 'false'
+    title: Display Errors
+    optional: true
+    help_text:
+      schema_version: 1
+      properties:
+        type: boolean
+        advanced: true
+        display_order: 5
+        help_text: Show errors on screen instead of falling back to the last cached reading. For debugging only.
+  sentry_dsn:
+    type: secret
+    title: Sentry Client Key
+    optional: true
+    is_global: true
+    help_text: Sentry Client Key from Sentry SDK for error capturing.

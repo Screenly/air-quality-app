@@ -1,0 +1,21 @@
+---
+name: Checks
+
+on:
+  push:
+    branches:
+      - development
+      - main
+      - master
+  pull_request:
+    branches:
+      - development
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: Screenly/edge-apps-actions/.github/workflows/checks.yml@v26.10.2

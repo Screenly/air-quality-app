@@ -1,0 +1,383 @@
+/*
+  The library's stylesheet is deliberately not imported. It inlines three Inter
+  woff2 faces as base64 — 444 KB of the 458 KB it produces — and this app is
+  designed on system-ui and ui-monospace on purpose, so none of it is used. Its
+  theme tokens are unused too: the palette here is fixed, and it is the design.
+*/
+@layer app {
+  :root {
+    --ink: #16181b;
+    --ink-60: rgba(22, 24, 27, 0.6);
+    --ink-35: rgba(22, 24, 27, 0.35);
+    --paper: #f3f1ec;
+    /* The current band's colour. main.ts sets it on #stage with each reading. */
+    --band: #2e8540;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  /*
+    One unit for the whole design: 1rem is a hundredth of the screen's width,
+    or of its height scaled to 16:9, whichever is smaller. Everything below is
+    in rem, so the layout fills any signage shape without clipping.
+
+    This is deliberately not <auto-scaler>: that scales a fixed 1920x1080
+    design, which would letterbox a portrait screen. The map window is fitted
+    to the screen's real aspect ratio instead.
+  */
+  html {
+    font-size: min(1vw, 1.7778vh);
+  }
+
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font:
+      1.15rem system-ui,
+      'DejaVu Sans',
+      sans-serif;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  #stage {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+
+  #map {
+    position: absolute;
+    inset: 0;
+  }
+
+  #map svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  #land {
+    fill: rgba(22, 24, 27, 0.055);
+    stroke: rgba(22, 24, 27, 0.5);
+    stroke-width: 2.5;
+    vector-effect: non-scaling-stroke;
+  }
+
+  /*
+    State and province lines: thinner and dashed, so they read as a lesser
+    boundary than the coast.
+  */
+  #states {
+    fill: none;
+    stroke: rgba(22, 24, 27, 0.4);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 5;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+
+  #graticule {
+    fill: none;
+    stroke: rgba(22, 24, 27, 0.1);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .marker {
+    position: absolute;
+    z-index: 2;
+  }
+
+  .marker div {
+    position: absolute;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  /* The air around the screen, washed in the colour of its reading. */
+  .aura {
+    width: 34rem;
+    height: 34rem;
+    background: radial-gradient(circle closest-side, var(--band), transparent);
+    opacity: 0.28;
+  }
+
+  .halo {
+    width: 3.33rem;
+    height: 3.33rem;
+    border: 0.16rem solid var(--band);
+  }
+
+  .you .dot {
+    width: 1.15rem;
+    height: 1.15rem;
+    background: var(--ink);
+    box-shadow: 0 0 0 0.42rem rgba(243, 241, 236, 0.9);
+  }
+
+  .tag {
+    border-radius: 0;
+    left: 2.6rem;
+    top: -0.73rem;
+    transform: none;
+    white-space: nowrap;
+    font-size: 1.25rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-60);
+  }
+
+  .label {
+    font-size: 1.05rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-35);
+  }
+
+  /* Same paper, one shade down and blurred, with a hairline so it still reads as a card. */
+  .layer {
+    position: absolute;
+    z-index: 4;
+    background: rgba(226, 222, 213, 0.58);
+    backdrop-filter: blur(18px) saturate(1.1);
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    border-radius: 1rem;
+    box-shadow: inset 0 0 0 0.07rem rgba(22, 24, 27, 0.1);
+  }
+
+  .brand {
+    top: 2.6rem;
+    left: 2.6rem;
+    padding: 0.8rem 1.5rem;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    font-size: 1.05rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-60);
+    white-space: nowrap;
+  }
+
+  .brand b {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .live {
+    width: 0.73rem;
+    height: 0.73rem;
+    border-radius: 50%;
+    background: var(--band);
+  }
+
+  .panel {
+    top: 2.6rem;
+    right: 2.6rem;
+    width: 46rem;
+    padding: 1.7rem 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.4rem;
+  }
+
+  .aqi {
+    font-size: 10rem;
+    font-weight: 500;
+    letter-spacing: -0.04em;
+    line-height: 0.82;
+    margin-top: 0.8rem;
+    color: var(--band);
+  }
+
+  .category {
+    font-size: 2.6rem;
+    font-weight: 500;
+    line-height: 1.15;
+    color: var(--band);
+  }
+
+  .advice {
+    margin-top: 0.5rem;
+    font-size: 1.45rem;
+    line-height: 1.35;
+    color: var(--ink-60);
+    max-width: 38ch;
+  }
+
+  .pollutants {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.2rem 2rem;
+    padding-top: 1.4rem;
+    border-top: 0.1rem solid rgba(22, 24, 27, 0.14);
+  }
+
+  .pollutant .label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-transform: none;
+    letter-spacing: 0.06em;
+    font-size: 1.2rem;
+  }
+
+  /* The pollutant driving the reading: named in its own sub-index colour. */
+  .pollutant.main .label {
+    color: var(--tone, var(--ink));
+    font-weight: 600;
+  }
+
+  .pollutant.main .label::after {
+    content: 'main';
+    font-size: 0.85rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 0.08rem currentColor;
+  }
+
+  .pollutant .v {
+    font-family: ui-monospace, 'DejaVu Sans Mono', monospace;
+    font-size: 2.4rem;
+    font-weight: 500;
+    margin-top: 0.4rem;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+  }
+
+  .pollutant .u {
+    display: inline;
+    margin-left: 0.4rem;
+    font-family: system-ui, 'DejaVu Sans', sans-serif;
+    font-size: 1rem;
+    letter-spacing: 0;
+    color: var(--ink-35);
+  }
+
+  .forecast {
+    padding-top: 1.4rem;
+    border-top: 0.1rem solid rgba(22, 24, 27, 0.14);
+  }
+
+  .peak {
+    color: var(--ink-60);
+  }
+
+  .bars,
+  .hours {
+    display: grid;
+    grid-template-columns: repeat(24, 1fr);
+    gap: 0.3rem;
+  }
+
+  .bars {
+    align-items: end;
+    height: 6rem;
+    margin-top: 1rem;
+  }
+
+  .bar {
+    border-radius: 0.2rem 0.2rem 0 0;
+    opacity: 0.8;
+  }
+
+  .bar:first-child {
+    opacity: 1;
+  }
+
+  .hours {
+    margin-top: 0.5rem;
+    font-family: ui-monospace, 'DejaVu Sans Mono', monospace;
+    font-size: 1rem;
+    color: var(--ink-35);
+  }
+
+  /* Labels sit on every sixth bar and run on over the empty ones after it. */
+  .hour {
+    white-space: nowrap;
+    overflow: visible;
+    width: 0;
+  }
+
+  .here {
+    bottom: 2.6rem;
+    left: 2.6rem;
+    padding: 1.3rem 1.7rem;
+    max-width: 46rem;
+  }
+
+  .here .place {
+    font-size: 3.1rem;
+    font-weight: 500;
+    line-height: 1.1;
+    margin-top: 0.5rem;
+  }
+
+  .here .coord {
+    margin-top: 0.45rem;
+    font-family: ui-monospace, 'DejaVu Sans Mono', monospace;
+    font-size: 1.2rem;
+    color: var(--ink-35);
+  }
+
+  /*
+    A portrait screen stacks the readout across the top instead of down the
+    side, at the size it has on a landscape screen: the unit is scaled up so the
+    page is about 55 units wide rather than 100.
+  */
+  @media (max-aspect-ratio: 1/1) {
+    html {
+      font-size: min(1.8vw, 1.7778vh);
+    }
+
+    .panel {
+      top: 8rem;
+      left: 2.6rem;
+      width: auto;
+    }
+  }
+
+  /*
+    Two states that have nothing to show: a screen with no location set, and an
+    API that failed with nothing cached to fall back on. Both keep the wordmark,
+    drop the map and the readout, and say what is going on.
+  */
+  .unlocated #map,
+  .unlocated .panel,
+  .unavailable #map,
+  .unavailable .panel {
+    display: none;
+  }
+
+  .unlocated .live,
+  .unavailable .live {
+    background: var(--ink-35);
+  }
+
+  .unlocated .here,
+  .unavailable .here {
+    left: 50%;
+    top: 50%;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    background: none;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+}
