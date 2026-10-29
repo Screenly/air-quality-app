@@ -52,14 +52,12 @@ settings:
           Enter a comma-separated pair of coordinates (e.g., 37.8267,-122.4233). If not specified, the app will attempt to use the device's coordinates.
   openweathermap_api_key:
     type: secret
-    title: OpenWeather API Key
+    title: Openweathermap API Key
     optional: false
-    help_text:
-      schema_version: 1
-      properties:
-        display_order: 4
-        help_text: |
-          Required. Create a free key at https://home.openweathermap.org/api_keys. The free plan includes the Air Pollution API, up to 1,000,000 calls a month; each screen uses about 2,900.
+    help_text: |
+      Enter your OpenWeatherMap API key to access weather data.
+      You can get your API key from https://openweathermap.org/api.
+    is_global: true
   display_errors:
     type: string
     default_value: 'false'

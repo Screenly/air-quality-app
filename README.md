@@ -32,7 +32,8 @@ The app uses OpenWeather rather than Open-Meteo because Open-Meteo's free API is
 for non-commercial use only. OpenWeather's free plan includes the Air Pollution
 API, allows commercial use, and gives 1,000,000 calls a month at 60 a minute.
 Create a key at <https://home.openweathermap.org/api_keys>. It is stored as a
-secret.
+global secret, `openweathermap_api_key`, declared the same way as in the Weather
+app, so one key entered for the account serves both apps.
 
 Each refresh makes two calls: the hourly forecast, about four days from the
 current hour, and the history for the 24 hours before it. At one refresh every
@@ -43,8 +44,9 @@ app then falls back to its cached reading.
 
 The free plan requires the attribution "Weather data provided by OpenWeather",
 a link to openweathermap.org and the OpenWeather logo wherever the data is
-shown. The readout carries the text and the address. A screen cannot follow a
-link, so the address is written out instead.
+shown. The readout says "Air quality data provided by OpenWeather", since that
+is the data shown, followed by the address. A screen cannot follow a link, so
+the address is written out instead.
 
 OpenWeather sends `Access-Control-Allow-Origin: *`, so the app calls it directly
 rather than through the CORS proxy.
