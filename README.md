@@ -61,7 +61,10 @@ itself, in `src/indices.ts`:
   averaging periods. PM2.5 and PM10 use their 24-hour mean, CO its 8-hour mean,
   and O₃ its 8-hour mean or its hourly value, whichever reads higher. NO₂ and
   SO₂ use their hourly value, and SO₂ switches to its 24-hour mean from 305 ppb.
-  Gases are converted from μg/m³ to ppb at 25 °C.
+  Above 200 ppb on the 8-hour mean, O₃ reads its hourly value alone. Gases are
+  converted from μg/m³ to ppb at 25 °C. As the EPA specifies, each
+  concentration is truncated to its table's precision and placed in one
+  category's row, so PM2.5 9.0 is 50 and 9.1 is 51.
 - **European AQI:** the European Environment Agency's 2024 bands on hourly
   values for PM2.5, PM10, O₃, NO₂ and SO₂. It has no CO band.
 

@@ -46,19 +46,20 @@ describe('readingFrom', () => {
   test('the reading is the forecast first hour, in local time', () => {
     const reading = readingFrom(FORECAST, HISTORY, 'us', 'UTC')
     expect(reading.time).toBe('2026-10-28T19:00')
-    // 140 μg/m³ of ozone is 71.3 ppb on the 8-hour mean: 104.
-    expect(reading.aqi).toBe(104)
+    // 140 μg/m³ of ozone is 71.3 ppb on the 8-hour mean, truncated to 71: the
+    // first step of Unhealthy for sensitive groups.
+    expect(reading.aqi).toBe(101)
     expect(reading.pollutants[2]).toEqual({
       label: 'O₃',
       value: 140,
-      index: 104,
+      index: 101,
     })
   })
 
   test('forecast is 24 hours from the current hour', () => {
     const reading = readingFrom(FORECAST, HISTORY, 'us', 'UTC')
     expect(reading.forecast).toHaveLength(24)
-    expect(reading.forecast[0]).toEqual({ time: '2026-10-28T19:00', aqi: 104 })
+    expect(reading.forecast[0]).toEqual({ time: '2026-10-28T19:00', aqi: 101 })
     expect(reading.forecast[23]!.time).toBe('2026-10-29T18:00')
   })
 
@@ -68,8 +69,8 @@ describe('readingFrom', () => {
   })
 
   test('a missing or broken history still reads', () => {
-    expect(readingFrom(FORECAST, null, 'us', 'UTC').aqi).toBe(104)
-    expect(readingFrom(FORECAST, { cod: 401 }, 'us', 'UTC').aqi).toBe(104)
+    expect(readingFrom(FORECAST, null, 'us', 'UTC').aqi).toBe(101)
+    expect(readingFrom(FORECAST, { cod: 401 }, 'us', 'UTC').aqi).toBe(101)
   })
 
   test('the 24-hour PM mean reaches back into the history', () => {

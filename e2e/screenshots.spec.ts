@@ -43,7 +43,7 @@ for (const { width, height } of RESOLUTIONS) {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     await page.waitForFunction(
-      () => document.getElementById('aqi')?.textContent === '73',
+      () => document.getElementById('aqi')?.textContent === '71',
     )
 
     await page.screenshot({

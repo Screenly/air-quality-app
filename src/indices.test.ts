@@ -26,6 +26,19 @@ describe('usIndex', () => {
     expect(usIndex('pm2_5', steady({ pm2_5: 55.4 }))).toBe(150)
   })
 
+  test('categories are discrete, not blended across a breakpoint', () => {
+    expect(usIndex('pm2_5', steady({ pm2_5: 9.1 }))).toBe(51)
+    expect(usIndex('pm2_5', steady({ pm2_5: 35.5 }))).toBe(101)
+    const o3 = (55 * 48) / 24.45
+    expect(usIndex('o3', steady({ o3 }))).toBe(51)
+  })
+
+  test('concentrations are truncated to the table precision first', () => {
+    // 9.09 truncates to 9.0, still Good; 54.9 μg/m³ of PM10 truncates to 54.
+    expect(usIndex('pm2_5', steady({ pm2_5: 9.09 }))).toBe(50)
+    expect(usIndex('pm10', steady({ pm10: 54.9 }))).toBe(50)
+  })
+
   test('PM10', () => {
     expect(usIndex('pm10', steady({ pm10: 154 }))).toBe(100)
   })
@@ -42,6 +55,14 @@ describe('usIndex', () => {
     const window = (key: Key, hours: number) =>
       key === 'o3' ? (hours === 1 ? spike : 50) : null
     expect(usIndex('o3', window)).toBeCloseTo(150, 6)
+  })
+
+  test('O₃ above 200 ppb on the 8-hour mean reads the hourly table alone', () => {
+    const hour = (125 * 48) / 24.45
+    const day = (201 * 48) / 24.45
+    const window = (key: Key, hours: number) =>
+      key === 'o3' ? (hours === 1 ? hour : day) : null
+    expect(usIndex('o3', window)).toBe(101)
   })
 
   test('NO₂ on its hourly value', () => {

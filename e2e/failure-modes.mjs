@@ -117,7 +117,7 @@ function newContext() {
   check(
     '1 API OK -> US AQI',
     [s.scale, s.aqi, s.category],
-    ['US AQI', '73', 'Moderate'],
+    ['US AQI', '71', 'Moderate'],
   )
   check('1 API OK -> ozone is the main pollutant', s.main, 'O₃')
   check('1 API OK -> 24 forecast bars', s.bars, 24)
@@ -130,7 +130,7 @@ function newContext() {
   await page2.waitForTimeout(900)
   const s2 = await probe(page2)
   check('2 fail+cache -> shows content', s2.state, '(content)')
-  check('2 fail+cache -> from last reading', s2.aqi, '73')
+  check('2 fail+cache -> from last reading', s2.aqi, '71')
   check('2 fail+cache -> signalled once', s2.ready, 1)
   check('2 fail+cache -> no error overlay', s2.panic, false)
 
