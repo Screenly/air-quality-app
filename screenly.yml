@@ -50,17 +50,16 @@ settings:
         display_order: 3
         help_text: |
           Enter a comma-separated pair of coordinates (e.g., 37.8267,-122.4233). If not specified, the app will attempt to use the device's coordinates.
-  open_meteo_api_key:
+  openweathermap_api_key:
     type: secret
-    title: Open-Meteo API Key
-    optional: true
+    title: OpenWeather API Key
+    optional: false
     help_text:
       schema_version: 1
       properties:
-        advanced: true
         display_order: 4
         help_text: |
-          Optional. Open-Meteo's free API is for non-commercial use. With a key from a paid Open-Meteo plan, the app uses the customer API instead. Leave blank to use the free API.
+          Required. Create a free key at https://home.openweathermap.org/api_keys. The free plan includes the Air Pollution API, up to 1,000,000 calls a month; each screen uses about 2,900.
   display_errors:
     type: string
     default_value: 'false'

@@ -1,37 +1,28 @@
 import { describe, expect, test } from 'bun:test'
 
-import { bandFor, dominant, hourOf, readingFrom, requestUrl } from './aqi'
+import {
+  bandFor,
+  dominant,
+  hourOf,
+  localTime,
+  readingFrom,
+  requestUrls,
+} from './aqi'
 
-function hours(from: number, count: number): string[] {
-  return Array.from({ length: count }, (_, i) => {
-    const day = 28 + Math.floor((from + i) / 24)
-    const hour = (from + i) % 24
-    return `2026-10-${day}T${String(hour).padStart(2, '0')}:00`
-  })
+const HOUR = 3600
+/** 2026-10-28 19:00 UTC. */
+const NOW = Date.UTC(2026, 9, 28, 19) / 1000
+
+function list(from: number, count: number, o3: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    dt: from + i * HOUR,
+    main: { aqi: 2 },
+    components: { co: 200, no2: 10, o3, so2: 2, pm2_5: 4, pm10: 10, nh3: 1 },
+  }))
 }
 
-const RESPONSE = {
-  current: {
-    time: '2026-10-28T19:00',
-    us_aqi: 54,
-    pm2_5: 8,
-    pm10: 9.9,
-    ozone: 82,
-    nitrogen_dioxide: 6.4,
-    sulphur_dioxide: 2.1,
-    carbon_monoxide: 144,
-    us_aqi_pm2_5: 33,
-    us_aqi_pm10: 9,
-    us_aqi_ozone: 54,
-    us_aqi_nitrogen_dioxide: 6,
-    us_aqi_sulphur_dioxide: 1,
-    us_aqi_carbon_monoxide: 2,
-  },
-  hourly: {
-    time: hours(0, 48),
-    us_aqi: Array.from({ length: 48 }, (_, i) => 40 + i),
-  },
-}
+const FORECAST = { list: list(NOW, 96, 140) }
+const HISTORY = { list: list(NOW - 24 * HOUR, 24, 140) }
 
 describe('bandFor', () => {
   test('US ceilings are inclusive', () => {
@@ -52,101 +43,96 @@ describe('bandFor', () => {
 })
 
 describe('readingFrom', () => {
-  test('takes the current index and pollutants', () => {
-    const reading = readingFrom(RESPONSE, 'us')
-    expect(reading.aqi).toBe(54)
+  test('the reading is the forecast first hour, in local time', () => {
+    const reading = readingFrom(FORECAST, HISTORY, 'us', 'UTC')
     expect(reading.time).toBe('2026-10-28T19:00')
-    expect(reading.pollutants[0]).toEqual({
-      label: 'PM2.5',
-      value: 8,
-      index: 33,
+    // 140 μg/m³ of ozone is 71.3 ppb on the 8-hour mean: 104.
+    expect(reading.aqi).toBe(104)
+    expect(reading.pollutants[2]).toEqual({
+      label: 'O₃',
+      value: 140,
+      index: 104,
     })
   })
 
   test('forecast is 24 hours from the current hour', () => {
-    const reading = readingFrom(RESPONSE, 'us')
+    const reading = readingFrom(FORECAST, HISTORY, 'us', 'UTC')
     expect(reading.forecast).toHaveLength(24)
-    expect(reading.forecast[0]).toEqual({ time: '2026-10-28T19:00', aqi: 59 })
+    expect(reading.forecast[0]).toEqual({ time: '2026-10-28T19:00', aqi: 104 })
     expect(reading.forecast[23]!.time).toBe('2026-10-29T18:00')
   })
 
-  test('forecast stops at the first missing hour', () => {
-    const us_aqi = [...RESPONSE.hourly.us_aqi]
-    us_aqi[25] = null as unknown as number
-    const reading = readingFrom(
-      { ...RESPONSE, hourly: { ...RESPONSE.hourly, us_aqi } },
-      'us',
-    )
-    expect(reading.forecast).toHaveLength(6)
+  test('forecast stops at a gap in the hours', () => {
+    const gappy = { list: FORECAST.list.filter((_, i) => i !== 6) }
+    expect(readingFrom(gappy, HISTORY, 'us', 'UTC').forecast).toHaveLength(6)
   })
 
-  test('a half-hour timezone starts from the slot it falls in', () => {
-    const current = { ...RESPONSE.current, time: '2026-10-28T19:30' }
-    const reading = readingFrom({ ...RESPONSE, current }, 'us')
-    expect(reading.forecast).toHaveLength(24)
-    expect(reading.forecast[0]!.time).toBe('2026-10-28T19:00')
+  test('a missing or broken history still reads', () => {
+    expect(readingFrom(FORECAST, null, 'us', 'UTC').aqi).toBe(104)
+    expect(readingFrom(FORECAST, { cod: 401 }, 'us', 'UTC').aqi).toBe(104)
+  })
+
+  test('the 24-hour PM mean reaches back into the history', () => {
+    const dirty = {
+      list: list(NOW - 24 * HOUR, 24, 0).map((entry) => ({
+        ...entry,
+        components: { ...entry.components, pm2_5: 60 },
+      })),
+    }
+    const reading = readingFrom(FORECAST, dirty, 'us', 'UTC')
+    // 23 hours at 60 and one at 4: a mean of 57.7 μg/m³, Unhealthy.
+    expect(reading.pollutants[0]!.index).toBe(152)
   })
 
   test('an error body is named, not dereferenced', () => {
     expect(() =>
-      readingFrom({ error: true, reason: 'Latitude must be in range' }, 'us'),
-    ).toThrow('Latitude must be in range')
-    expect(() => readingFrom('<html>', 'us')).toThrow('no air quality reading')
+      readingFrom({ cod: 401, message: 'Invalid API key' }, null, 'us', 'UTC'),
+    ).toThrow('Invalid API key')
+    expect(() => readingFrom('<html>', null, 'us', 'UTC')).toThrow(
+      'no air quality data',
+    )
   })
 
-  test('a missing index is a failure, not a zero', () => {
-    const current = { ...RESPONSE.current, us_aqi: null }
-    expect(() => readingFrom({ ...RESPONSE, current }, 'us')).toThrow(
-      'no US AQI',
+  test('an empty forecast is a failure, not a zero', () => {
+    expect(() => readingFrom({ list: [] }, null, 'us', 'UTC')).toThrow(
+      'no air quality for this position',
     )
   })
 
   test('a European reading has no CO sub-index', () => {
-    const reading = readingFrom(
-      {
-        current: {
-          time: '2026-10-28T19:00',
-          european_aqi: 31,
-          carbon_monoxide: 144,
-        },
-        hourly: { time: [] },
-      },
-      'european',
-    )
+    const reading = readingFrom(FORECAST, HISTORY, 'european', 'UTC')
     expect(reading.pollutants[5]).toEqual({
       label: 'CO',
-      value: 144,
+      value: 200,
       index: null,
     })
-    expect(reading.forecast).toEqual([])
+    expect(reading.aqi).toBe(70)
   })
 })
 
+test('localTime keeps a half-hour timezone', () => {
+  expect(localTime(NOW, 'Asia/Kolkata')).toBe('2026-10-29T00:30')
+  expect(localTime(NOW, 'America/Los_Angeles')).toBe('2026-10-28T12:00')
+})
+
 test('dominant is the highest sub-index', () => {
-  expect(dominant(readingFrom(RESPONSE, 'us'))?.label).toBe('O₃')
+  expect(dominant(readingFrom(FORECAST, HISTORY, 'us', 'UTC'))?.label).toBe(
+    'O₃',
+  )
 })
 
 test('hourOf reads the wall-clock hour', () => {
   expect(hourOf('2026-10-28T07:00')).toBe(7)
 })
 
-describe('requestUrl', () => {
-  test('free API without a key', () => {
-    const url = new URL(requestUrl(37.38612, -122.08394, 'us', ''))
-    expect(url.host).toBe('air-quality-api.open-meteo.com')
-    expect(url.searchParams.get('apikey')).toBeNull()
-    expect(url.searchParams.get('latitude')).toBe('37.3861')
-    expect(url.searchParams.get('hourly')).toBe('us_aqi')
-    expect(url.searchParams.get('current')).toContain('us_aqi_pm2_5')
-  })
-
-  test('customer API with a key', () => {
-    const url = new URL(requestUrl(1, 2, 'european', 'k3y'))
-    expect(url.host).toBe('customer-air-quality-api.open-meteo.com')
-    expect(url.searchParams.get('apikey')).toBe('k3y')
-    expect(url.searchParams.get('hourly')).toBe('european_aqi')
-    expect(url.searchParams.get('current')).not.toContain(
-      'european_aqi_carbon_monoxide',
-    )
-  })
+test('requestUrls asks for the forecast and the day before it', () => {
+  const urls = requestUrls(37.38612, -122.08394, 'k3y', NOW * 1000 + 1234)
+  const forecast = new URL(urls.forecast)
+  const history = new URL(urls.history)
+  expect(forecast.pathname).toBe('/data/2.5/air_pollution/forecast')
+  expect(forecast.searchParams.get('lat')).toBe('37.3861')
+  expect(forecast.searchParams.get('appid')).toBe('k3y')
+  expect(history.pathname).toBe('/data/2.5/air_pollution/history')
+  expect(history.searchParams.get('end')).toBe(String(NOW))
+  expect(history.searchParams.get('start')).toBe(String(NOW - 24 * HOUR))
 })

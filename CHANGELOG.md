@@ -3,6 +3,12 @@
 User-facing release notes. Technical detail — refactors, dependency bumps, API
 changes — belongs in the GitHub Release for the matching tag.
 
+## Unreleased
+
+- Air quality now comes from OpenWeather. Add a free OpenWeather API key in
+  the app settings; without one the screen asks for it.
+- The reading refreshes every thirty minutes.
+
 ## v26.10.0
 
 The first release.

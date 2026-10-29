@@ -1,3 +1,5 @@
+import { europeanIndex, type Key, usIndex, type Window } from './indices'
+
 export type Scale = 'us' | 'european'
 
 /** One step of an index: everything up to `max` (inclusive) reads as `name`. */
@@ -102,14 +104,14 @@ export function scaleLabel(scale: Scale): string {
   return scale === 'us' ? 'US AQI' : 'European AQI'
 }
 
-/** The pollutants shown, in Open-Meteo's own field names. */
+/** The pollutants shown, in OpenWeather's own component names. */
 export const POLLUTANTS = [
   { key: 'pm2_5', label: 'PM2.5' },
   { key: 'pm10', label: 'PM10' },
-  { key: 'ozone', label: 'O₃' },
-  { key: 'nitrogen_dioxide', label: 'NO₂' },
-  { key: 'sulphur_dioxide', label: 'SO₂' },
-  { key: 'carbon_monoxide', label: 'CO' },
+  { key: 'o3', label: 'O₃' },
+  { key: 'no2', label: 'NO₂' },
+  { key: 'so2', label: 'SO₂' },
+  { key: 'co', label: 'CO' },
 ] as const
 
 export interface Pollutant {
@@ -122,7 +124,7 @@ export interface Pollutant {
 
 /** One reading, trimmed to what is drawn. Small enough to cache as is. */
 export interface Reading {
-  /** Local wall-clock time of the reading, as Open-Meteo writes it: 2026-10-28T19:00. */
+  /** Local wall-clock time of the reading at the screen: 2026-10-28T19:00. */
   time: string
   aqi: number
   pollutants: Pollutant[]
@@ -130,52 +132,38 @@ export interface Reading {
   forecast: { time: string; aqi: number }[]
 }
 
-/** The index field for a scale, and its per-pollutant sub-index fields. */
-function indexField(scale: Scale, pollutant?: string): string {
-  const base = scale === 'us' ? 'us_aqi' : 'european_aqi'
-  return pollutant ? `${base}_${pollutant}` : base
-}
+const HOUR = 3600
 
 /**
- * The European index has no CO sub-index, and Open-Meteo rejects the whole
- * request if one field in it is unknown, so it is never asked for.
+ * The two OpenWeather calls behind a reading. The forecast starts at the
+ * current hour and runs about four days; the history is the day before it,
+ * which the US index needs for its 8- and 24-hour averages.
  */
-function hasSubIndex(scale: Scale, pollutant: string): boolean {
-  return scale === 'us' || pollutant !== 'carbon_monoxide'
-}
-
-export function requestUrl(
+export function requestUrls(
   lat: number,
   lng: number,
-  scale: Scale,
   apiKey: string,
-): string {
-  const current = [
-    indexField(scale),
-    ...POLLUTANTS.map((p) => p.key),
-    ...POLLUTANTS.filter((p) => hasSubIndex(scale, p.key)).map((p) =>
-      indexField(scale, p.key),
-    ),
-  ]
-  const params = new URLSearchParams({
-    latitude: lat.toFixed(4),
-    longitude: lng.toFixed(4),
-    current: current.join(','),
-    hourly: indexField(scale),
-    timezone: 'auto',
-    forecast_days: '2',
+  nowMs: number,
+): { forecast: string; history: string } {
+  const hour = Math.floor(nowMs / 1000 / HOUR) * HOUR
+  const base = 'https://api.openweathermap.org/data/2.5/air_pollution'
+  const position = { lat: lat.toFixed(4), lon: lng.toFixed(4), appid: apiKey }
+  const history = new URLSearchParams({
+    ...position,
+    start: String(hour - 24 * HOUR),
+    end: String(hour),
   })
-  // The free API is non-commercial only; a paid key moves to the customer host.
-  const host = apiKey
-    ? 'customer-air-quality-api.open-meteo.com'
-    : 'air-quality-api.open-meteo.com'
-  if (apiKey) params.set('apikey', apiKey)
-  return `https://${host}/v1/air-quality?${params}`
+  return {
+    forecast: `${base}/forecast?${new URLSearchParams(position)}`,
+    history: `${base}/history?${history}`,
+  }
 }
 
-interface Response {
-  current: Record<string, unknown> & { time: string }
-  hourly: Record<string, unknown> & { time: string[] }
+/** One hour of concentrations, in μg/m³. */
+interface Sample {
+  /** Unix seconds, on the hour. */
+  dt: number
+  c: Record<Key, number | null>
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -186,65 +174,145 @@ function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-/**
- * What comes back off the wire is unknown, so it is narrowed rather than
- * asserted. This checks the envelope only — enough to tell a reading from an
- * error body like {"error":true,"reason":"..."}.
- */
-function hasEnvelope(value: unknown): value is Response {
-  if (!isRecord(value)) return false
-  const { current, hourly } = value
-  return (
-    isRecord(current) &&
-    typeof current.time === 'string' &&
-    isRecord(hourly) &&
-    Array.isArray(hourly.time)
-  )
+/** OpenWeather puts the reason for a failure in `message`. */
+export function reasonOf(body: unknown): string {
+  return isRecord(body) && typeof body.message === 'string'
+    ? `: ${body.message}`
+    : ''
 }
 
-/** Turns a response into a Reading, or throws saying what was wrong with it. */
-export function readingFrom(response: unknown, scale: Scale): Reading {
-  if (!hasEnvelope(response)) {
-    const reason =
-      isRecord(response) && typeof response.reason === 'string'
-        ? `: ${response.reason}`
-        : ''
-    throw new Error(`Open-Meteo returned no air quality reading${reason}`)
+/**
+ * What comes back off the wire is unknown, so it is narrowed rather than
+ * asserted. An error body such as {"cod":401,"message":"..."} has no list.
+ */
+function samplesFrom(body: unknown): Sample[] {
+  if (!isRecord(body) || !Array.isArray(body.list)) {
+    throw new Error(`OpenWeather returned no air quality data${reasonOf(body)}`)
   }
-  const { current, hourly } = response
+  const samples: Sample[] = []
+  for (const entry of body.list as unknown[]) {
+    if (!isRecord(entry) || !isRecord(entry.components)) continue
+    const dt = numberOrNull(entry.dt)
+    if (dt === null) continue
+    const components = entry.components
+    const c = Object.fromEntries(
+      POLLUTANTS.map((p) => [p.key, numberOrNull(components[p.key])]),
+    ) as Sample['c']
+    samples.push({ dt, c })
+  }
+  return samples
+}
 
-  const aqi = numberOrNull(current[indexField(scale)])
+/** Every pollutant's sub-index at series[at], whole numbers as published. */
+function subIndices(
+  series: Sample[],
+  at: number,
+  scale: Scale,
+): Record<Key, number | null> {
+  const now = series[at]!.dt
+  // The mean of the hours in (now - hours, now] that have a value.
+  const window: Window = (key, hours) => {
+    let sum = 0
+    let count = 0
+    for (let i = at; i >= 0 && series[i]!.dt > now - hours * HOUR; i--) {
+      const value = series[i]!.c[key]
+      if (value === null) continue
+      sum += value
+      count++
+    }
+    return count ? sum / count : null
+  }
+  const of = scale === 'us' ? usIndex : europeanIndex
+  return Object.fromEntries(
+    POLLUTANTS.map((p) => {
+      const value = of(p.key, window)
+      return [p.key, value === null ? null : Math.round(value)]
+    }),
+  ) as Record<Key, number | null>
+}
+
+/** The overall index is the worst pollutant's. */
+function overall(indices: Record<Key, number | null>): number | null {
+  const values = Object.values(indices).filter((v) => v !== null)
+  return values.length ? Math.max(...values) : null
+}
+
+/**
+ * Unix seconds as wall-clock time at the screen: 2026-10-28T19:00. The rest of
+ * the app reads hours off this string.
+ */
+export function localTime(dt: number, timeZone: string): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(new Date(dt * 1000))
+      .map((part) => [part.type, part.value]),
+  )
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
+}
+
+/**
+ * Turns the forecast (and, when it came back, the history) into a Reading, or
+ * throws saying what was wrong. The reading is the forecast's first hour.
+ */
+export function readingFrom(
+  forecastBody: unknown,
+  historyBody: unknown,
+  scale: Scale,
+  timeZone: string,
+): Reading {
+  const forecast = samplesFrom(forecastBody)
+  if (!forecast.length) {
+    throw new Error('OpenWeather has no air quality for this position')
+  }
+  // The history is a nice-to-have: without it the means cover fewer hours.
+  let history: Sample[] = []
+  try {
+    if (historyBody !== null) history = samplesFrom(historyBody)
+  } catch {
+    history = []
+  }
+
+  const byHour = new Map<number, Sample>()
+  for (const sample of [...history, ...forecast]) byHour.set(sample.dt, sample)
+  const series = [...byHour.values()].sort((a, b) => a.dt - b.dt)
+  const now = series.findIndex((sample) => sample.dt === forecast[0]!.dt)
+
+  const indices = subIndices(series, now, scale)
+  const aqi = overall(indices)
   if (aqi === null) {
-    throw new Error(`Open-Meteo has no ${scaleLabel(scale)} for this position`)
+    throw new Error(`OpenWeather has no ${scaleLabel(scale)} for this position`)
   }
 
+  const current = series[now]!
   const pollutants = POLLUTANTS.map((p) => ({
     label: p.label,
-    value: numberOrNull(current[p.key]),
-    index: hasSubIndex(scale, p.key)
-      ? numberOrNull(current[indexField(scale, p.key)])
-      : null,
+    value: current.c[p.key],
+    index: indices[p.key],
   }))
 
-  const hourlyIndex = hourly[indexField(scale)]
-  const hourlyValues: unknown[] = Array.isArray(hourlyIndex) ? hourlyIndex : []
-  // Hourly slots are on the hour, but in a half-hour timezone such as India's
-  // the current reading is stamped :30. Start from the slot it falls in.
-  const hour = current.time.slice(0, 13)
-  const start = hourly.time.findIndex(
-    (time) => typeof time === 'string' && time.slice(0, 13) === hour,
-  )
-  const forecast: Reading['forecast'] = []
-  if (start >= 0) {
-    for (let i = start; i < hourly.time.length && forecast.length < 24; i++) {
-      const value = numberOrNull(hourlyValues[i])
-      const time = hourly.time[i]
-      if (value === null || typeof time !== 'string') break
-      forecast.push({ time, aqi: value })
-    }
+  const hourly: Reading['forecast'] = []
+  for (let i = now; i < series.length && hourly.length < 24; i++) {
+    // A gap in the hours would put the next bar at the wrong time.
+    if (i > now && series[i]!.dt !== series[i - 1]!.dt + HOUR) break
+    const value = i === now ? aqi : overall(subIndices(series, i, scale))
+    if (value === null) break
+    hourly.push({ time: localTime(series[i]!.dt, timeZone), aqi: value })
   }
 
-  return { time: current.time, aqi, pollutants, forecast }
+  return {
+    time: localTime(current.dt, timeZone),
+    aqi,
+    pollutants,
+    forecast: hourly,
+  }
 }
 
 /** The pollutant with the highest sub-index — the one driving the reading. */
@@ -257,7 +325,7 @@ export function dominant(reading: Reading): Pollutant | null {
   return worst
 }
 
-/** The hour in an Open-Meteo local time string, 0–23. */
+/** The hour in a local time string, 0–23. */
 export function hourOf(time: string): number {
   return Number(time.slice(11, 13))
 }

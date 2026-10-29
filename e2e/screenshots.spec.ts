@@ -8,7 +8,7 @@ import {
 } from '@screenly/edge-apps/test/screenshots'
 import path from 'path'
 
-import { RESPONSE } from './fixture.mjs'
+import { bodyFor } from './fixture.mjs'
 
 const { screenlyJsContent } = createMockScreenlyForScreenshots(
   {
@@ -18,6 +18,7 @@ const { screenlyJsContent } = createMockScreenlyForScreenshots(
   {
     aqi_scale: 'us',
     display_errors: 'false',
+    openweathermap_api_key: 'test-key',
   },
 )
 
@@ -31,18 +32,18 @@ for (const { width, height } of RESOLUTIONS) {
     await setupClockMock(page)
     await setupScreenlyJsMock(page, screenlyJsContent)
 
-    await page.route('**/v1/air-quality*', async (route) => {
+    await page.route('**/air_pollution/**', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(RESPONSE),
+        body: bodyFor(route.request().url()),
       })
     })
 
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     await page.waitForFunction(
-      () => document.getElementById('aqi')?.textContent === '72',
+      () => document.getElementById('aqi')?.textContent === '73',
     )
 
     await page.screenshot({
