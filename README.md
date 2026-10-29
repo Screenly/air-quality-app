@@ -4,18 +4,21 @@
 
 ![The air quality index around the screen, with its main pollutant and the next 24 hours](screenshots/air-quality-app-1920x1080.webp)
 
-The air quality index where the screen is, from
-[Open-Meteo](https://open-meteo.com/en/docs/air-quality-api). It shows the
-number, its category and what that means for people outside, coloured by band.
-Below that are the six pollutants it is made of, with the one driving the
-reading marked, and a bar for each of the next 24 hours. A map of the region
-sits behind it, centred on the screen and washed in the colour of the reading.
-Nothing animates. The reading refreshes every fifteen minutes, and Open-Meteo's
-model updates hourly.
+The air quality index where the screen is, from the
+[OpenWeather Air Pollution API](https://openweathermap.org/api/air-pollution).
+It shows the number, its category and what that means for people outside,
+coloured by band. Below that are the six pollutants it is made of, with the one
+driving the reading marked, and a bar for each of the next 24 hours. A map of
+the region sits behind it, centred on the screen and washed in the colour of the
+reading. Nothing animates. The reading refreshes every thirty minutes, and
+OpenWeather's model updates hourly.
 
 `aqi_scale` picks the index: **US AQI**, 0 to 500 from Good to Hazardous, or the
 **European AQI**, 0 to 100 and over from Good to Extremely poor. The category
 names, colours and advice follow the US EPA and the European Environment Agency.
+
+An OpenWeather API key is required: `openweathermap_api_key`. Without one the
+screen says so instead of fetching.
 
 A screen with no location set says so instead of guessing. Set
 `override_coordinates` to a latitude and longitude, like `28.6139,77.2090`, to
@@ -23,21 +26,60 @@ read the air somewhere else. The heading then names the nearest city to that
 point. `override_locale` changes how numbers and hours are written (`8.5` or
 `8,5`, `7 PM` or `19 Uhr`). The labels stay in English.
 
-## Open-Meteo licensing
+## OpenWeather
 
-Open-Meteo's free API is for **non-commercial use** only, and it needs no key.
-Commercial deployments need a paid Open-Meteo plan. Put its key in
-`open_meteo_api_key` and the app uses `customer-air-quality-api.open-meteo.com`
-instead. The key is stored as a secret.
+The app uses OpenWeather rather than Open-Meteo because Open-Meteo's free API is
+for non-commercial use only. OpenWeather's free plan includes the Air Pollution
+API, allows commercial use, and gives 1,000,000 calls a month at 60 a minute.
+Create a key at <https://home.openweathermap.org/api_keys>. It is stored as a
+global secret, `openweathermap_api_key`, declared the same way as in the Weather
+app, so one key entered for the account serves both apps.
 
-Open-Meteo sends `Access-Control-Allow-Origin: *`, so the app calls it directly
+Each refresh makes two calls: the hourly forecast, about four days from the
+current hour, and the history for the 24 hours before it. At one refresh every
+thirty minutes that is about 2,900 calls a month for each screen, so one free
+key covers about 340 screens. Screens sharing a key also share the 60-a-minute
+limit, so a large fleet restarting at once can be refused for a minute. The
+app then falls back to its cached reading.
+
+The free plan requires the attribution "Weather data provided by OpenWeather",
+a link to openweathermap.org and the OpenWeather logo wherever the data is
+shown. The readout says "Air quality data provided by OpenWeather", since that
+is the data shown, followed by the address. A screen cannot follow a link, so
+the address is written out instead.
+
+OpenWeather sends `Access-Control-Allow-Origin: *`, so the app calls it directly
 rather than through the CORS proxy.
+
+### How the index is worked out
+
+OpenWeather returns pollutant concentrations, and its own 1 to 5 index. The app
+ignores that index and computes the US or European one from the concentrations
+itself, in `src/indices.ts`:
+
+- **US AQI:** the EPA breakpoints (PM2.5 as revised in 2024), with the EPA's
+  averaging periods. PM2.5 and PM10 use their 24-hour mean, CO its 8-hour mean,
+  and O₃ its 8-hour mean or its hourly value, whichever reads higher. NO₂ and
+  SO₂ use their hourly value, and SO₂ switches to its 24-hour mean from 305 ppb.
+  Above 200 ppb on the 8-hour mean, O₃ reads its hourly value alone. Gases are
+  converted from μg/m³ to ppb at 25 °C. As the EPA specifies, each
+  concentration is truncated to its table's precision and placed in one
+  category's row, so PM2.5 9.0 is 50 and 9.1 is 51.
+- **European AQI:** the European Environment Agency's 2024 bands on hourly
+  values for PM2.5, PM10, O₃, NO₂ and SO₂. It has no CO band.
+
+The overall index is the highest pollutant's. The history call supplies the
+hours before now for the averages. If it fails, the forecast alone is used,
+and the averages cover fewer hours until the next refresh. These are computed
+from model concentrations, so they can differ from an official monitor's
+reading.
 
 ## Behaviour when the API fails
 
-This follows the Edge Apps failure-mode algorithm. The free API has no
-credentials, and a rejected paid key is just another failed request, so only the
-data half of that diagram applies:
+This follows the Edge Apps failure-mode algorithm. A missing key is caught
+before any request: the screen says "API key needed" and signals ready. A
+rejected key is just another failed request, and goes through the data half of
+that diagram:
 
 | API    | `display_errors`   | Result                                           |
 | ------ | ------------------ | ------------------------------------------------ |
@@ -51,12 +93,13 @@ not exist yet (Phorge T10903), so for now the app says what happened and signals
 ready anyway. An app that never signals stalls the playlist for sixty seconds
 and is then dropped with `PlaybackReason::LoadTimeout`.
 
-A response with no index for this position, or an error body such as
-`{"error":true,"reason":"..."}`, counts as a failure, not as a reading of zero.
+An empty forecast, or an error body such as
+`{"cod":401,"message":"Invalid API key"}`, counts as a failure, not as a reading
+of zero.
 The cache remembers the position and index it was taken for. It is ignored if
 either has changed since.
 
-The request is given 8 seconds. The screenshotter allows 10 seconds for the page
+Each request is given 8 seconds, and the two run side by side. The screenshotter allows 10 seconds for the page
 to go quiet and 10 more for the ready signal, so timing out early leaves room to
 fall back to cache, draw, and signal inside the budget.
 
@@ -86,13 +129,13 @@ bun run dev
 ```
 
 Mock screen data is in `mock-data.yml`. Edit it to move the screen somewhere
-else.
+else, and add `openweathermap_api_key` under `settings` to fetch real data.
 
 ```bash
 bun run type-check   # also runs automatically before every build
 bun run lint
 bun run format
-bun run test         # unit tests for the index, bands and parsing
+bun run test         # unit tests for the index maths, bands and parsing
 bun run build && bun run verify   # every failure-mode branch, against dist/
 bun run screenshots  # Playwright captures at each signage resolution
 ```
