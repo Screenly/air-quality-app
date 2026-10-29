@@ -52,7 +52,7 @@ settings:
           Enter a comma-separated pair of coordinates (e.g., 37.8267,-122.4233). If not specified, the app will attempt to use the device's coordinates.
   openweathermap_api_key:
     type: secret
-    title: Openweathermap API Key
+    title: OpenWeatherMap API Key
     optional: false
     help_text: |
       Enter your OpenWeatherMap API key to access weather data.
