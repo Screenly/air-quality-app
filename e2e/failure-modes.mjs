@@ -10,11 +10,19 @@ import http from 'http'
 import fs from 'fs'
 import path from 'path'
 
-import { RESPONSE } from './fixture.mjs'
+import { bodyFor, FORECAST } from './fixture.mjs'
 
 const DIST = path.join(import.meta.dirname, '..', 'dist')
-const API = '**/v1/air-quality*'
-const BODY = JSON.stringify(RESPONSE)
+const API = '**/air_pollution/**'
+const KEY = { openweathermap_api_key: 'k3y' }
+
+/** Answers both OpenWeather calls with the fixture. */
+const ok = (r) =>
+  r.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: bodyFor(r.request().url()),
+  })
 
 const STUB = (settings) => `
 window.screenly = {
@@ -30,7 +38,7 @@ window.screenly = {
   }
 };`
 
-let settings = {}
+let settings = { ...KEY }
 
 const server = http.createServer((req, res) => {
   let p = req.url.split('?')[0]
@@ -101,9 +109,7 @@ function newContext() {
 {
   const ctx = await newContext()
   const page = await newPage(ctx)
-  await page.route(API, (r) =>
-    r.fulfill({ status: 200, contentType: 'application/json', body: BODY }),
-  )
+  await page.route(API, ok)
   await page.goto('http://127.0.0.1:8124/', { waitUntil: 'networkidle' })
   await page.waitForTimeout(600)
   const s = await probe(page)
@@ -111,7 +117,7 @@ function newContext() {
   check(
     '1 API OK -> US AQI',
     [s.scale, s.aqi, s.category],
-    ['US AQI', '72', 'Moderate'],
+    ['US AQI', '71', 'Moderate'],
   )
   check('1 API OK -> ozone is the main pollutant', s.main, 'O₃')
   check('1 API OK -> 24 forecast bars', s.bars, 24)
@@ -124,19 +130,19 @@ function newContext() {
   await page2.waitForTimeout(900)
   const s2 = await probe(page2)
   check('2 fail+cache -> shows content', s2.state, '(content)')
-  check('2 fail+cache -> from last reading', s2.aqi, '72')
+  check('2 fail+cache -> from last reading', s2.aqi, '71')
   check('2 fail+cache -> signalled once', s2.ready, 1)
   check('2 fail+cache -> no error overlay', s2.panic, false)
 
   // ── 3. the cache is for another index -> not used ──────────────────────────
-  settings = { aqi_scale: 'european' }
+  settings = { ...KEY, aqi_scale: 'european' }
   const page3 = await newPage(ctx)
   await page3.route(API, (r) => r.abort())
   await page3.goto('http://127.0.0.1:8124/', { waitUntil: 'load' })
   await page3.waitForTimeout(900)
   const s3 = await probe(page3)
   check('3 cache for other index -> abort state', s3.state, 'unavailable')
-  settings = {}
+  settings = { ...KEY }
   await ctx.close()
 }
 
@@ -156,14 +162,14 @@ function newContext() {
 
 // ── 5. API fails, display_errors ON -> error shown, still signals ────────────
 {
-  settings = { display_errors: 'true' }
+  settings = { ...KEY, display_errors: 'true' }
   const ctx = await newContext()
   const page = await newPage(ctx)
   await page.route(API, (r) =>
     r.fulfill({
-      status: 400,
+      status: 401,
       contentType: 'application/json',
-      body: JSON.stringify({ error: true, reason: 'Cannot initialize' }),
+      body: JSON.stringify({ cod: 401, message: 'Invalid API key' }),
     }),
   )
   await page.goto('http://127.0.0.1:8124/', { waitUntil: 'load' })
@@ -172,12 +178,12 @@ function newContext() {
   check('5 display_errors -> error overlay shown', s.panic, true)
   check(
     '5 display_errors -> names the reason',
-    s.panicText.includes('Cannot initialize'),
+    s.panicText.includes('Invalid API key'),
     true,
   )
   check('5 display_errors -> still signalled', s.ready >= 1, true)
   await ctx.close()
-  settings = {}
+  settings = { ...KEY }
 }
 
 // ── 6. unlocated screen ──────────────────────────────────────────────────────
@@ -200,13 +206,13 @@ function newContext() {
 
 // ── 7. European index ────────────────────────────────────────────────────────
 {
-  settings = { aqi_scale: 'european' }
+  settings = { ...KEY, aqi_scale: 'european' }
   const ctx = await newContext()
   const page = await newPage(ctx)
-  let url = ''
+  const urls = []
   await page.route(API, (r) => {
-    url = r.request().url()
-    r.fulfill({ status: 200, contentType: 'application/json', body: BODY })
+    urls.push(r.request().url())
+    return ok(r)
   })
   await page.goto('http://127.0.0.1:8124/', { waitUntil: 'networkidle' })
   await page.waitForTimeout(600)
@@ -214,35 +220,55 @@ function newContext() {
   check(
     '7 european -> European AQI',
     [s.scale, s.aqi, s.category],
-    ['European AQI', '44', 'Moderate'],
+    ['European AQI', '75', 'Poor'],
   )
-  check('7 european -> asks for it', url.includes('hourly=european_aqi'), true)
-  check('7 european -> free API', url.includes('//air-quality-api.'), true)
+  check(
+    '7 european -> forecast and history, with the key',
+    [
+      urls.some((u) => u.includes('/forecast?')),
+      urls.some((u) => u.includes('/history?')),
+      urls.every((u) => u.includes('appid=k3y')),
+    ],
+    [true, true, true],
+  )
   await ctx.close()
-  settings = {}
+  settings = { ...KEY }
 }
 
-// ── 8. a paid key moves to the customer API ──────────────────────────────────
+// ── 8. no API key -> says so, never fetches ──────────────────────────────────
 {
-  settings = { open_meteo_api_key: 'k3y' }
+  settings = {}
   const ctx = await newContext()
   const page = await newPage(ctx)
-  let url = ''
+  let fetched = false
   await page.route(API, (r) => {
-    url = r.request().url()
-    r.fulfill({ status: 200, contentType: 'application/json', body: BODY })
+    fetched = true
+    r.abort()
   })
-  await page.goto('http://127.0.0.1:8124/', { waitUntil: 'networkidle' })
+  await page.goto('http://127.0.0.1:8124/', { waitUntil: 'load' })
+  await page.waitForTimeout(700)
   const s = await probe(page)
-  check(
-    '8 api key -> customer host',
-    url.includes('//customer-air-quality-api.'),
-    true,
-  )
-  check('8 api key -> sends key', url.includes('apikey=k3y'), true)
-  check('8 api key -> shows content', s.state, '(content)')
+  check('8 no key -> unconfigured state', s.state, 'unconfigured')
+  check('8 no key -> says so', s.where, 'API key needed')
+  check('8 no key -> never fetches', fetched, false)
+  check('8 no key -> signalled once', s.ready, 1)
   await ctx.close()
-  settings = {}
+  settings = { ...KEY }
+}
+
+// ── 8b. the history fails -> the forecast alone still reads ──────────────────
+{
+  const ctx = await newContext()
+  const page = await newPage(ctx)
+  await page.route(API, (r) =>
+    r.request().url().includes('/history') ? r.abort() : ok(r),
+  )
+  await page.goto('http://127.0.0.1:8124/', { waitUntil: 'networkidle' })
+  await page.waitForTimeout(600)
+  const s = await probe(page)
+  check('8b no history -> shows content', s.state, '(content)')
+  check('8b no history -> 24 forecast bars', s.bars, 24)
+  await ctx.close()
 }
 
 // ── 9. a hanging API must time out inside the budget ─────────────────────────
@@ -270,10 +296,7 @@ function newContext() {
 {
   const ctx = await newContext()
   const page = await newPage(ctx)
-  const empty = {
-    ...RESPONSE,
-    current: { time: RESPONSE.current.time, us_aqi: null },
-  }
+  const empty = { ...FORECAST, list: [] }
   await page.route(API, (r) =>
     r.fulfill({
       status: 200,

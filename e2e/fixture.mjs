@@ -1,49 +1,52 @@
-// A fixed Open-Meteo response shared by the screenshot spec and the
-// failure-mode harness: a Moderate day driven by ozone, peaking in the evening.
-export const CURRENT_TIME = '2026-10-28T14:00'
+// Fixed OpenWeather responses shared by the screenshot spec and the
+// failure-mode harness: a Moderate day driven by ozone, which climbs through
+// the afternoon and clears overnight. Silicon Valley, so local time is UTC-8.
 
-const times = Array.from({ length: 48 }, (_, i) => {
-  const day = 28 + Math.floor(i / 24)
-  return `2026-10-${day}T${String(i % 24).padStart(2, '0')}:00`
-})
+/** The forecast's first hour: 1 PM local on the screenshot clock's day. */
+export const NOW = Date.UTC(2025, 1, 19, 21) / 1000
+const HOUR = 3600
 
-// Climbs through the afternoon into Unhealthy for sensitive groups, then clears overnight.
-const shape = [
-  30, 28, 26, 25, 25, 27, 32, 40, 48, 55, 60, 64, 66, 68, 72, 80, 92, 108, 112,
-  104, 88, 70, 55, 44,
+/** Ozone in μg/m³ by local hour, peaking in the early evening. */
+const OZONE = [
+  70, 66, 62, 60, 58, 60, 70, 90, 110, 125, 135, 140, 145, 150, 148, 146, 144,
+  140, 130, 115, 100, 90, 82, 76,
 ]
-const usAqi = [...shape, ...shape.map((v) => Math.round(v * 0.8))]
 
-export const RESPONSE = {
-  latitude: 37.4,
-  longitude: -122.1,
-  timezone: 'America/Los_Angeles',
-  current: {
-    time: CURRENT_TIME,
-    interval: 3600,
-    us_aqi: 72,
-    european_aqi: 44,
-    pm2_5: 11.4,
-    pm10: 18.2,
-    ozone: 148,
-    nitrogen_dioxide: 21.6,
-    sulphur_dioxide: 2.1,
-    carbon_monoxide: 212,
-    us_aqi_pm2_5: 48,
-    us_aqi_pm10: 17,
-    us_aqi_ozone: 72,
-    us_aqi_nitrogen_dioxide: 19,
-    us_aqi_sulphur_dioxide: 1,
-    us_aqi_carbon_monoxide: 2,
-    european_aqi_pm2_5: 38,
-    european_aqi_pm10: 18,
-    european_aqi_ozone: 44,
-    european_aqi_nitrogen_dioxide: 22,
-    european_aqi_sulphur_dioxide: 2,
-  },
-  hourly: {
-    time: times,
-    us_aqi: usAqi,
-    european_aqi: usAqi.map((v) => Math.round(v * 0.6)),
-  },
+function sample(dt, day) {
+  const local = (((dt / HOUR - 8) % 24) + 24) % 24
+  // Tomorrow is a cleaner day.
+  const fade = day >= 1 ? 0.8 : 1
+  return {
+    dt,
+    main: { aqi: 2 },
+    components: {
+      co: 212,
+      no: 0.4,
+      no2: 21.6,
+      o3: Math.round(OZONE[local] * fade),
+      so2: 2.1,
+      pm2_5: 8,
+      pm10: 18.2,
+      nh3: 1.2,
+    },
+  }
+}
+
+const coord = { lon: -122.0839, lat: 37.3861 }
+
+export const HISTORY = {
+  coord,
+  list: Array.from({ length: 24 }, (_, i) => sample(NOW - (24 - i) * HOUR, 0)),
+}
+
+export const FORECAST = {
+  coord,
+  list: Array.from({ length: 96 }, (_, i) =>
+    sample(NOW + i * HOUR, Math.floor((i + 13) / 24)),
+  ),
+}
+
+/** Answers a routed OpenWeather request with the matching fixture. */
+export function bodyFor(url) {
+  return JSON.stringify(url.includes('/history') ? HISTORY : FORECAST)
 }

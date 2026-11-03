@@ -314,6 +314,19 @@
     width: 0;
   }
 
+  /* The credit OpenWeather's free plan asks for: legible, but last. */
+  .credit {
+    margin-top: -0.4rem;
+    font-size: 1rem;
+    line-height: 1.35;
+    color: var(--ink-60);
+  }
+
+  /* A wrap falls between credits, never inside one. */
+  .credit span {
+    white-space: nowrap;
+  }
+
   .here {
     bottom: 2.6rem;
     left: 2.6rem;
@@ -353,23 +366,27 @@
   }
 
   /*
-    Two states that have nothing to show: a screen with no location set, and an
-    API that failed with nothing cached to fall back on. Both keep the wordmark,
-    drop the map and the readout, and say what is going on.
+    Three states that have nothing to show: a screen with no location set, no
+    API key, and an API that failed with nothing cached to fall back on. All
+    keep the wordmark, drop the map and the readout, and say what is going on.
   */
   .unlocated #map,
   .unlocated .panel,
+  .unconfigured #map,
+  .unconfigured .panel,
   .unavailable #map,
   .unavailable .panel {
     display: none;
   }
 
   .unlocated .live,
+  .unconfigured .live,
   .unavailable .live {
     background: var(--ink-35);
   }
 
   .unlocated .here,
+  .unconfigured .here,
   .unavailable .here {
     left: 50%;
     top: 50%;

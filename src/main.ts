@@ -8,13 +8,15 @@ import {
   signalReady,
   writeEdgeAppCache,
 } from '@screenly/edge-apps'
+import tzlookup from '@photostructure/tz-lookup'
 
 import {
   bandFor,
   dominant,
   hourOf,
   readingFrom,
-  requestUrl,
+  reasonOf,
+  requestUrls,
   scaleLabel,
   type Reading,
   type Scale,
@@ -53,6 +55,11 @@ let screenLng = NaN
 
 /** How numbers and hours are written. Labels stay in English. */
 let locale = 'en'
+
+/** The screen's own timezone. OpenWeather times are UTC. */
+let timeZone = 'UTC'
+
+let apiKey = ''
 
 let scale: Scale = 'us'
 
@@ -154,7 +161,7 @@ function formatNumber(value: number, digits: number): string {
 }
 
 /**
- * An Open-Meteo local time, already in the screen's own timezone, written as an
+ * A local time, already in the screen's own timezone, written as an
  * hour. Formatted as UTC so the player's clock zone cannot shift it again.
  */
 function formatHour(time: string): string {
@@ -252,7 +259,18 @@ function abort(): void {
   stage.className = 'unavailable'
   say('lede', 'Air quality')
   say('where', 'Unavailable')
-  say('coord', 'Open-Meteo could not be reached and nothing is cached')
+  say('coord', 'OpenWeather could not be reached and nothing is cached')
+}
+
+/** Fetches JSON, and throws with OpenWeather's own reason on a non-2xx. */
+async function getJson(url: string, timeoutMs: number): Promise<unknown> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
+  // OpenWeather puts the reason for a 401 or 429 in the body, so it is read either way.
+  const body: unknown = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new Error(`OpenWeather returned ${response.status}${reasonOf(body)}`)
+  }
+  return body
 }
 
 /**
@@ -267,28 +285,17 @@ async function current(): Promise<Reading | null> {
   const fetchTimeoutMs = 8000
   let reading: Reading
   try {
-    const apiKey = getSettingWithDefault<string>(
-      'open_meteo_api_key',
-      '',
-    ).trim()
-    // Open-Meteo sends Access-Control-Allow-Origin: *, so no CORS proxy.
-    const response = await fetch(
-      requestUrl(screenLat, screenLng, scale, apiKey),
-      { signal: AbortSignal.timeout(fetchTimeoutMs) },
-    )
-    // Open-Meteo puts the reason for a 400 in the body, so it is read either way.
-    const body: unknown = await response.json().catch(() => null)
-    if (!response.ok) {
-      const reason =
-        typeof body === 'object' && body !== null && 'reason' in body
-          ? `: ${String(body.reason)}`
-          : ''
-      throw new Error(`Open-Meteo returned ${response.status}${reason}`)
-    }
-    reading = readingFrom(body, scale)
+    const urls = requestUrls(screenLat, screenLng, apiKey, Date.now())
+    // OpenWeather sends Access-Control-Allow-Origin: *, so no CORS proxy. The
+    // history only sharpens the averages, so its failure is not the reading's.
+    const [forecast, history] = await Promise.all([
+      getJson(urls.forecast, fetchTimeoutMs),
+      getJson(urls.history, fetchTimeoutMs).catch(() => null),
+    ])
+    reading = readingFrom(forecast, history, scale, timeZone)
   } catch (thrown) {
     const error = thrown instanceof Error ? thrown : new Error(String(thrown))
-    reportError(error, { source: 'open-meteo' })
+    reportError(error, { source: 'openweather' })
     if (getSettingWithDefault<boolean>('display_errors', false)) throw error
     // A reading only means something for the place and index it was taken for.
     const cached = readEdgeAppCache<Cached>(CACHE_NAMESPACE, CACHE_KEY)
@@ -310,8 +317,8 @@ async function current(): Promise<Reading | null> {
 }
 
 /**
- * The approved failure-mode algorithm. The free API has no credentials, and a
- * rejected paid key is just another failed fetch, so only the data half applies.
+ * The approved failure-mode algorithm. A missing key is caught in start(),
+ * before any fetch; a rejected one is just another failed fetch.
  *
  *   fetch -> ok        : cache it, show it
  *         -> failed    : display_errors ? show the error
@@ -354,6 +361,11 @@ async function start(): Promise<void> {
 
   screenLat = position.lat
   screenLng = position.lng
+  try {
+    timeZone = tzlookup(screenLat, screenLng)
+  } catch {
+    timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  }
 
   say('where', await placeLabel(position))
   say(
@@ -364,11 +376,24 @@ async function start(): Promise<void> {
     if (!stage.className) drawMap()
   })
 
+  // Without a key there is nothing to ask for. Said on screen, not thrown:
+  // it is a setting to fill in, not a fault.
+  apiKey = getSettingWithDefault<string>('openweathermap_api_key', '').trim()
+  if (!apiKey) {
+    stage.className = 'unconfigured'
+    say('lede', 'Air quality')
+    say('where', 'API key needed')
+    say('coord', 'Add an OpenWeather API key in the app settings')
+    signalReady()
+    return
+  }
+
   await load()
   signalReady()
 
-  // Open-Meteo's model runs hourly; a quarter-hour keeps "as of" close behind.
-  const refreshMs = 15 * 60 * 1000
+  // OpenWeather's model updates hourly. Each refresh is two calls, so half an
+  // hour is ~2,900 calls a month a screen: a free key (1,000,000) covers ~340.
+  const refreshMs = 30 * 60 * 1000
   setInterval(() => void load(), refreshMs)
 }
 
